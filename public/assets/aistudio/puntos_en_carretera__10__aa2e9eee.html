@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Puntos dentro de carretera – Exceso de Velocidad</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<style>
+  :root{
+    --bg:#f5f6f8; --surface:#fff; --text:#1c2230; --muted:#667085; --border:#d9dde5;
+    --accent:#1a6ef0; --accent-text:#fff; --ok:#0f8a4b; --ok-bg:#e3f6ec; --bad:#c2410c; --bad-bg:#fdeadf;
+    --head:#eef1f6; --row-alt:#fafbfc;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14171d; --surface:#1d222b; --text:#e8ebf1; --muted:#98a1b3; --border:#323a48;
+      --accent:#4c8dff; --accent-text:#0b1220; --ok:#4ade80; --ok-bg:#12301f; --bad:#fb923c; --bad-bg:#3a2112;
+      --head:#262d38; --row-alt:#1a1f27;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:24px}
+  .wrap{max-width:1300px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:0 0 12px}
+  .sub{color:var(--muted);margin:0 0 20px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+  .drop{display:block;border:2px dashed var(--border);border-radius:12px;padding:32px 20px;text-align:center;cursor:pointer;transition:.15s}
+  .drop.over,.drop:hover{border-color:var(--accent);background:var(--row-alt)}
+  .drop strong{display:block;font-size:17px;margin-bottom:4px}
+  .drop span{color:var(--muted)}
+  input[type=file]{display:none}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .stat{background:var(--head);border-radius:10px;padding:12px 14px}
+  .stat b{display:block;font-size:24px;line-height:1.2}
+  .stat span{color:var(--muted);font-size:13px}
+  .stat.ok b{color:var(--ok)} .stat.bad b{color:var(--bad)}
+  .controls{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+  .controls label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px}
+  .controls select{padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit}
+  input[type=range]{width:180px}
+  button{background:var(--accent);color:var(--accent-text);border:0;border-radius:8px;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
+  button:hover:not(:disabled){filter:brightness(1.08)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.sec{background:var(--head);color:var(--text);border:1px solid var(--border)}
+  .spacer{flex:1}
+  .skiprow{margin-top:14px;font-size:14px;color:var(--muted)}
+  .skiprow input{width:60px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;text-align:center}
+  .msg{padding:10px 14px;border-radius:8px;margin-top:12px;font-size:14px}
+  .msg.ok{background:var(--ok-bg);color:var(--ok)} .msg.err{background:var(--bad-bg);color:var(--bad)}
+  .msg.info{background:var(--head);color:var(--muted)}
+  progress{width:100%;height:10px;margin-top:10px}
+  #map{height:580px;border-radius:10px;border:1px solid var(--border);z-index:0;margin-top:14px}
+  .legend{display:flex;gap:16px;color:var(--muted);font-size:13px;flex-wrap:wrap}
+  .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+  .note{color:var(--muted);font-size:13px;margin:10px 0 0}
+  .arrow-ic{background:none;border:0}
+  .arrow-ic svg{display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.45))}
+  .leaflet-tooltip.mat{font-weight:600;font-size:11px;padding:1px 5px}
+  .mapbox{position:relative;margin-top:14px}
+  .mapbox #map{margin-top:0}
+  .busy{position:absolute;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.28);border-radius:10px}
+  .busy .pill{background:var(--surface);color:var(--text);padding:14px 22px;border-radius:12px;display:flex;align-items:center;gap:14px;border:1px solid var(--border);box-shadow:0 6px 24px rgba(0,0,0,.25);font-weight:600}
+  .spin{width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite;flex:none}
+  .msg .spin{display:inline-block;width:14px;height:14px;border-width:2px;vertical-align:-2px;margin-right:8px}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  progress{accent-color:var(--accent)}
+  .sw{display:inline-block;width:16px;height:5px;border-radius:3px}
+  .types{margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+  body.mode-esri .osm-only{display:none !important}
+  body.mode-osm .esri-only{display:none !important}
+  .pin{display:inline-block;width:11px;height:11px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);margin-right:7px;vertical-align:-1px}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Puntos dentro de carretera</h1>
+  <p class="sub">Sube el reporte Excel, dibuja los puntos con <b>Latitud</b> y <b>Longitud</b> en el mapa, detecta cuáles están sobre una carretera y descarga solo esos.</p>
+
+  <div class="card">
+    <label class="drop" id="drop" for="file">
+      <strong>Arrastra aquí tu archivo .xls / .xlsx o haz clic para seleccionarlo</strong>
+      <span>Los puntos se dibujan y se analizan automáticamente al cargarlo</span>
+    </label>
+    <input type="file" id="file" accept=".xls,.xlsx,.xlsm">
+    <div class="skiprow">
+      <label>Eliminar las primeras <input type="number" id="skip" min="0" max="50" value="3"> filas del Excel antes de analizar (para ubicar las columnas Latitud y Longitud)</label>
+    </div>
+    <div id="msg" class="msg hidden"></div>
+    <progress id="prog" class="hidden" value="0" max="100"></progress>
+  </div>
+
+  <div id="result" class="hidden">
+    <div class="card">
+      <div class="stats" id="stats"></div>
+      <div class="controls">
+        <label>Referencia de la vía:
+          <select id="ref">
+            <option value="esri">Dibujo del mapa OpenStreetMap (zoom máximo)</option>
+            <option value="osm">Datos vectoriales de OpenStreetMap</option>
+          </select>
+        </label>
+        <label>Margen de error GPS:
+          <input type="range" id="tol" min="0" max="25" step="0.5" value="0">
+          <b id="tolv">0 m</b>
+        </label>
+        <label>Mostrar:
+          <select id="show">
+            <option value="all">Todos los puntos</option>
+            <option value="in">Solo dentro de carretera</option>
+            <option value="out">Solo fuera de carretera</option>
+          </select>
+        </label>
+        <label class="osm-only"><input type="checkbox" id="roads" checked> Ver carreteras consultadas</label>
+        <label class="esri-only"><input type="checkbox" id="mask"> Ver franja detectada</label>
+        <label><input type="checkbox" id="lbl"> Matrícula en cada punto</label>
+        <label><input type="checkbox" id="grp" checked> Agrupar puntos superpuestos</label>
+        <span class="spacer"></span>
+        <button class="sec" id="btnRe">Reanalizar</button>
+        <button id="btnDl" disabled>Descargar solo puntos dentro</button>
+      </div>
+      <div class="controls types osm-only">
+        <b style="font-size:14px">Tipos de vía a considerar:</b>
+        <label><input type="checkbox" class="gtype" data-g="main" checked><i class="sw" style="background:#f59e0b"></i>Autopistas, troncales y primarias</label>
+        <label><input type="checkbox" class="gtype" data-g="sec" checked><i class="sw" style="background:#ca8a04"></i>Secundarias y terciarias</label>
+        <label><input type="checkbox" class="gtype" data-g="local" checked><i class="sw" style="background:#0ea5e9"></i>Locales (calles y caminos sin clasificar)</label>
+        <label><input type="checkbox" class="gtype" data-g="svc"><i class="sw" style="background:#6b7280"></i>Servicio y trochas</label>
+      </div>
+      <p class="note esri-only">El análisis se hace sobre el <b>dibujo del mapa OpenStreetMap</b> (el mismo que ves) a su zoom máximo (<b id="zinfo2">z19</b>): se leen los píxeles de las imágenes del mapa y se mide, para cada coordenada, la distancia a la <b>franja de color de la vía</b> (su relleno, sin el contorno), que ya incluye su anchura real a ese zoom. Un punto es «dentro» si está sobre la franja (se admite medio píxel, unos 15 cm, por el redondeo del dibujo) o a menos del <b>margen de error GPS</b> de ella (0 m por defecto). Activa «Ver franja detectada» para ver en magenta exactamente qué zona se toma como franja de la vía.</p>
+      <p class="note osm-only">El análisis se hace <b>al zoom máximo del mapa</b> (<b id="zinfo">z19</b>), donde la posición de cada punto y el ancho de la vía se miden en píxeles del mapa. Un punto se considera «dentro» si su distancia al eje de la vía es menor o igual al <b>semiancho de la vía</b> más el <b>margen de error GPS</b>. El semiancho sale de las etiquetas de OpenStreetMap (ancho o carriles) o, si no existen, se estima según el tipo de vía. Un punto apenas fuera del límite (hasta 5 m) se acepta solo si hay otro punto claramente dentro de la misma vía a menos de 40 m. Con «Ver carreteras consultadas» se dibuja sobre el mapa el ancho analizado (se ajusta en cada zoom). Este modo mide contra el eje vectorial de cada vía; si prefieres medir contra lo que ves dibujado en el mapa, usa la referencia «Dibujo del mapa OpenStreetMap».</p>
+    </div>
+
+    <div class="card">
+      <div class="legend">
+        <span><i class="pin" style="background:#16a34a"></i>Dentro de carretera</span>
+        <span><i class="pin" style="background:#dc2626"></i>Fuera de carretera</span>
+        <span><i class="pin" style="background:#2563eb"></i>Sin analizar</span>
+        <span>La punta del marcador señala la coordenada exacta</span>
+      </div>
+      <div class="mapbox">
+        <div id="map"></div>
+        <div id="busy" class="busy hidden"><div class="pill"><div class="spin"></div><span id="busyt">Procesando…</span></div></div>
+      </div>
+      <p class="note" id="mapCount"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var MAXTOL = 60;               // radio máximo (m) con el que se consultan las vías
+  var CELL = 0.003;              // tamaño de celda (~330 m) para agrupar las consultas
+  var CHUNK = 40;                // celdas por consulta a Overpass
+  var ENDPOINTS = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://lz4.overpass-api.de/api/interpreter'
+  ];
+  var EXCL = 'footway|path|steps|cycleway|pedestrian|bridleway|corridor|platform|proposed|construction|raceway|elevator';
+
+  var $ = function(id){ return document.getElementById(id); };
+  var norm = function(s){
+    return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+  };
+  var esc = function(s){
+    return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+  };
+  function showMsg(t, type, busy){
+    var m = $('msg'); m.className = 'msg ' + type;
+    m.innerHTML = (busy ? '<span class="spin"></span>' : '') + esc(t);
+  }
+  function setBusy(t){ $('busy').classList.toggle('hidden', !t); $('busyt').textContent = t || ''; }
+  function tick(){ return new Promise(function(r){ setTimeout(r, 50); }); }
+  function setProg(v){ var p = $('prog'); if(v == null){ p.classList.add('hidden'); } else { p.classList.remove('hidden'); p.value = v; } }
+
+  var ZMAX = 19;   // zoom máximo del mapa (se lee del mapa al iniciarlo)
+  var mpp = function(lat, z){ return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z); };   // metros por píxel
+  var proj = function(lat, lon, z){   // coordenadas en píxeles (Web Mercator) al zoom indicado (por defecto el máximo)
+    var sc = 256 * Math.pow(2, z || ZMAX), f = Math.min(Math.max(Math.sin(lat * Math.PI / 180), -0.9999), 0.9999);
+    return [ (lon + 180) / 360 * sc, (0.5 - Math.log((1 + f) / (1 - f)) / (4 * Math.PI)) * sc ];
+  };
+  var last = null, state = null, map = null, layer = null, roadsLayer = null, analyzing = false;
+
+  /* ---------- Carga del archivo ---------- */
+  function handleFile(file){
+    if(!file) return;
+    if(typeof XLSX === 'undefined'){ showMsg('No se pudo cargar la librería de Excel. Verifica tu conexión a internet.','err'); return; }
+    var reader = new FileReader();
+    reader.onload = function(e){
+      last = { data:new Uint8Array(e.target.result), name:file.name };
+      showMsg('Procesando archivo…', 'info', true);
+      setTimeout(function(){
+        try { load(last.data, last.name); }
+        catch(err){ console.error(err); setBusy(null); showMsg('No se pudo leer el archivo: ' + err.message, 'err'); }
+      }, 60);
+    };
+    showMsg('Leyendo archivo…', 'info', true);
+    reader.readAsArrayBuffer(file);
+  }
+
+  function num(v){
+    if(typeof v === 'number') return v;
+    if(typeof v === 'string') return parseFloat(v.replace(',', '.'));
+    return NaN;
+  }
+
+  function load(data, fileName){
+    var wb = XLSX.read(data, { type:'array', cellNF:true, cellStyles:true });
+    var sheetName = wb.SheetNames[0], ws = wb.Sheets[sheetName];
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    var C0 = range.s.c, C1 = range.e.c;
+    var skip = Math.max(0, parseInt($('skip').value, 10) || 0);
+
+    // Lee la fila de encabezados en la fila R y ubica Latitud/Longitud/Matrícula
+    function readHeader(R){
+      var header = [], idx = { lat:-1, lon:-1, mat:-1 };
+      for(var c = C0; c <= C1; c++){
+        var h = ws[XLSX.utils.encode_cell({r:R,c:c})];
+        var t = h ? (h.w || h.v) : '';
+        header.push(t);
+        var n = norm(t);
+        if(n === 'latitud') idx.lat = c - C0;
+        if(n === 'longitud') idx.lon = c - C0;
+        if(n === 'matricula') idx.mat = c - C0;
+      }
+      return { header:header, idx:idx };
+    }
+
+    // 1) Se eliminan las primeras N filas: el encabezado queda en la fila N+1
+    var R0 = range.s.r + skip, hd = readHeader(R0), auto = false;
+    // 2) Si ahí no están las columnas, se busca el encabezado automáticamente
+    if(hd.idx.lat < 0 || hd.idx.lon < 0){
+      for(var R = range.s.r; R <= Math.min(range.e.r, range.s.r + 60); R++){
+        var t2 = readHeader(R);
+        if(t2.idx.lat >= 0 && t2.idx.lon >= 0){ hd = t2; R0 = R; auto = true; break; }
+      }
+    }
+    var header = hd.header, idx = hd.idx;
+    if(idx.lat < 0 || idx.lon < 0){ showMsg('No se encontraron las columnas "Latitud" y "Longitud" en las primeras filas del archivo.','err'); return; }
+    var removed = R0 - range.s.r;
+
+    var rows = [];
+    for(var r = R0 + 1; r <= range.e.r; r++){
+      var d = [], raw = [], any = false;
+      for(var cc = C0; cc <= C1; cc++){
+        var cell = ws[XLSX.utils.encode_cell({r:r,c:cc})];
+        if(cell) any = true;
+        d.push(cell ? (cell.w != null ? cell.w : (cell.v == null ? '' : cell.v)) : '');
+        raw.push(cell ? cell.v : null);
+      }
+      if(!any) continue;
+      var la = num(raw[idx.lat]), lo = num(raw[idx.lon]);
+      var valid = isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180 && !(la === 0 && lo === 0);
+      rows.push({ src:r, d:d, lat:la, lon:lo, valid:valid, dist:null, road:'' });
+    }
+
+    // Nuevo archivo: se limpia todo lo del archivo anterior
+    tileCache = {}; tileData = {};
+    if(layer && map){ map.removeLayer(layer); layer = null; }
+    if(roadsLayer && map){ map.removeLayer(roadsLayer); roadsLayer = null; }
+    if(maskLayer && map){ map.removeLayer(maskLayer); maskLayer = null; }
+    setProg(null);
+    state = { ws:ws, range:range, hdr:R0, sheetName:sheetName, header:header, idx:idx, rows:rows,
+              ways:[], wayIds:{}, done:{}, analyzed:false,
+              base:fileName.replace(/\.[^.]+$/, '') + '_en_carretera' };
+
+    $('result').classList.remove('hidden');
+    renderStats();
+    initMap();
+    showTol();
+    drawMap(true);
+    showMsg('Archivo cargado: se eliminaron las primeras ' + removed + ' filas' + (auto ? ' (detectadas automáticamente)' : '') + '; quedan ' + rows.length + ' filas de datos, ' + rows.filter(function(r){return r.valid;}).length + ' con coordenadas válidas.', 'info');
+    analyze();
+  }
+
+  /* ---------- Mapa ---------- */
+  function initMap(){
+    if(map) return;
+    map = L.map('map', { maxZoom:19 });
+    var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Tiles &copy; Esri' });
+    var osm = L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', { subdomains:'abc', maxZoom:19, attribution:'&copy; OpenStreetMap contributors · OSM France' });
+    osm.addTo(map);
+    L.control.layers({ 'OpenStreetMap':osm, 'Satélite (solo visual)':sat }, null, { position:'topright' }).addTo(map);
+    map.setView([-12.05, -77.04], 8);
+    var mz = map.getMaxZoom(); ZMAX = isFinite(mz) ? mz : 19;
+    map.on('zoomend', updateRoadWidths);
+  }
+
+  var iconCache = {};
+  // Marcador en forma de gota (estilo Google My Maps): la punta inferior marca la coordenada exacta
+  function pinIcon(color){
+    if(!iconCache[color]){
+      iconCache[color] = L.divIcon({
+        className:'arrow-ic', iconSize:[22,32], iconAnchor:[11,32], popupAnchor:[0,-30], tooltipAnchor:[0,-30],
+        html:'<svg width="22" height="32" viewBox="0 0 28 40"><path d="M14 .8C6.5.8.8 6.7.8 13.6c0 5 2.5 9 4.9 12.6C8.6 30.7 14 39.2 14 39.2s5.4-8.5 8.3-13c2.4-3.6 4.9-7.6 4.9-12.6C27.2 6.7 21.5.8 14 .8z" fill="' + color + '" stroke="rgba(0,0,0,.35)" stroke-width="1.4"/><circle cx="14" cy="13.8" r="5.2" fill="#fff"/></svg>'
+      });
+    }
+    return iconCache[color];
+  }
+
+  function tol(){ return parseFloat($('tol').value); }
+  function showTol(){
+    var ref = -12; if(state){ var v = state.rows.filter(function(r){ return r.valid; }); if(v.length) ref = v[Math.floor(v.length / 2)].lat; }
+    var zz = (state && state.zA) || ZMAX;
+    $('tolv').textContent = tol() + ' m (≈ ' + Math.round(tol() / mpp(ref, zz)) + ' px)';
+    var zt = 'z' + zz + ' · 1 px ≈ ' + mpp(ref, zz).toFixed(2) + ' m';
+    $('zinfo').textContent = zt; $('zinfo2').textContent = zt;
+  }
+  var GRACE = 5, NEAR = 40;   // zona dudosa (m) y distancia de vecindad (m)
+  function classify(){
+    var m = tol(), rows = state.rows;
+    rows.forEach(function(r){
+      r.rescued = false;
+      // exceso (px) ≤ margen (px); con el dibujo del mapa se admite medio píxel por el redondeo del trazo
+      r.inside = !!(r.valid && r.excess != null && r.excess <= m / r.mpp + (state.mode === 'esri' ? 0.5 : 0));
+    });
+    if(state.mode === 'esri') return;   // con el dibujo del mapa no se rescatan puntos
+    var firm = rows.filter(function(r){ return r.inside && r.excess <= (m * 0.6) / r.mpp; });
+    rows.forEach(function(r){
+      if(!r.valid || r.inside || r.excess == null || r.excess > (m + GRACE) / r.mpp) return;
+      var near = NEAR / r.mpp;
+      for(var i = 0; i < firm.length; i++){
+        var f = firm[i];
+        if(f.wayId !== r.wayId) continue;
+        var dx = f.x - r.x, dy = f.y - r.y;
+        if(dx * dx + dy * dy <= near * near){ r.inside = true; r.rescued = true; break; }
+      }
+    });
+  }
+  function cls(r){
+    if(!state.analyzed) return 'na';
+    return r.inside ? 'in' : 'out';
+  }
+
+  function popupHtml(r){
+    var rows = '';
+    state.header.forEach(function(h, i){
+      if(norm(h) === 'mapa' || r.d[i] === '') return;
+      rows += '<tr><td style="padding:1px 8px 1px 0;color:#667085">' + esc(h) + '</td><td><b>' + esc(r.d[i]) + '</b></td></tr>';
+    });
+    var extra = '';
+    if(state.analyzed){
+      var lab = function(a, b){ return '<tr><td style="padding:3px 8px 1px 0;color:#667085">' + a + '</td><td><b>' + b + '</b></td></tr>'; };
+      if(state.mode === 'esri'){
+        extra = lab('Resultado', r.inside ? 'Dentro de carretera' : 'Fuera de carretera')
+              + (r.dist != null
+                  ? lab('Distancia a la franja de la vía (z' + state.zA + ')', r.dist.toFixed(1) + ' px · ' + (r.dist * r.mpp).toFixed(2) + ' m')
+                  : lab('Franja de la vía', 'ninguna a ≤ ' + Math.round(r.R * r.mpp) + ' m'));
+      } else if(r.dist != null){
+        var dm = r.dist * r.mpp;
+        extra = lab('Resultado', r.inside ? (r.rescued ? 'Dentro (ajustado por puntos vecinos)' : 'Dentro de carretera') : 'Fuera de carretera')
+              + lab('Distancia al eje (z' + ZMAX + ')', Math.round(r.dist) + ' px · ' + dm.toFixed(1) + ' m')
+              + lab('Semiancho de la vía', Math.round(r.half / r.mpp) + ' px · ' + r.half.toFixed(1) + ' m')
+              + lab('Vía (OpenStreetMap)', esc(r.wayObj.name || 'sin nombre') + ' · ' + esc(r.wayObj.kind) + ' · <a href="https://www.openstreetmap.org/way/' + r.wayObj.id + '" target="_blank" rel="noopener">ver</a>');
+      } else {
+        extra = lab('Resultado', 'Fuera de carretera (sin vía a ≤ ' + MAXTOL + ' m)');
+      }
+    }
+    return '<table style="font-size:12px;border-collapse:collapse">' + rows + extra + '</table>';
+  }
+
+  function drawMap(fit){
+    if(!map || !state) return;
+    if(layer){ map.removeLayer(layer); }
+    layer = ($('grp').checked && L.markerClusterGroup)
+      ? L.markerClusterGroup({ maxClusterRadius:30, spiderfyOnMaxZoom:true, showCoverageOnHover:false, chunkedLoading:true,
+                               spiderLegPolylineOptions:{ weight:1.5, color:'#667085', opacity:.7 } })
+      : L.layerGroup();
+    var show = $('show').value, colors = { in:'#16a34a', out:'#dc2626', na:'#2563eb' };
+    var bounds = [], shown = 0, markers = [];
+    state.rows.forEach(function(r){
+      if(!r.valid) return;
+      var k = cls(r);
+      if(show !== 'all' && k !== show) return;
+      var m = L.marker([r.lat, r.lon], { icon:pinIcon(colors[k]), riseOnHover:true });
+      m.bindPopup(function(){ return popupHtml(r); }, { maxWidth:340 });
+      m.on('popupopen', function(){ highlightWay(r.wayObj); });
+      m.on('popupclose', clearHighlight);
+      if(state.idx.mat >= 0) m.bindTooltip(esc(r.d[state.idx.mat]), { permanent:$('lbl').checked, direction:'top', offset:[0,0], className:'mat' });
+      markers.push(m); bounds.push([r.lat, r.lon]); shown++;
+    });
+    if(layer.addLayers) layer.addLayers(markers); else markers.forEach(function(m){ layer.addLayer(m); });
+    if(fit && bounds.length) map.fitBounds(bounds, { padding:[40,40], maxZoom:17 });
+    layer.addTo(map);
+    setTimeout(function(){ map.invalidateSize(); }, 60);
+    $('mapCount').textContent = shown + ' puntos dibujados.';
+  }
+
+  var hl = null;
+  function clearHighlight(){ if(hl){ map.removeLayer(hl); hl = null; } }
+  function highlightWay(w){
+    clearHighlight();
+    if(!w) return;
+    hl = L.polyline(w.pts, { color:'#d946ef', weight:5, opacity:.9, interactive:false }).addTo(map);
+  }
+
+  var maskLayer = null;
+  function drawMaskLayer(){
+    if(maskLayer){ map.removeLayer(maskLayer); maskLayer = null; }
+    if(!map || !state || state.mode !== 'esri' || !$('mask').checked) return;
+    var z = state.zA;
+    var Mask = L.GridLayer.extend({
+      createTile: function(c){
+        var t = document.createElement('canvas'); t.width = 256; t.height = 256;
+        var d = tileData[z + '/' + c.x + '/' + c.y];
+        if(d && d.bits){
+          var ctx = t.getContext('2d'), im = ctx.createImageData(256, 256), px = im.data;
+          for(var i = 0; i < 65536; i++){
+            if((d.bits[i >> 3] >> (i & 7)) & 1){ px[i*4] = 217; px[i*4+1] = 70; px[i*4+2] = 239; px[i*4+3] = 150; }
+          }
+          ctx.putImageData(im, 0, 0);
+        }
+        return t;
+      }
+    });
+    maskLayer = new Mask({ minNativeZoom:z, maxNativeZoom:z, maxZoom:ZMAX, zIndex:5 });
+    maskLayer.addTo(map);
+  }
+
+  function updateRoadWidths(){
+    if(!roadsLayer || !state) return;
+    var z = map.getZoom();
+    state.ways.forEach(function(w){
+      if(w.pl) w.pl.setStyle({ weight:Math.max(2, 2 * w.half / mpp(w.lat, z)) });
+    });
+  }
+
+  function drawRoads(){
+    if(roadsLayer){ map.removeLayer(roadsLayer); roadsLayer = null; }
+    if(!$('roads').checked || !state || !state.ways.length) return;
+    roadsLayer = L.layerGroup();
+    var en = enabledGroups();
+    state.ways.forEach(function(w){
+      w.pl = null;
+      if(!en[w.grp]) return;
+      w.pl = L.polyline(w.pts, { color:GROUP_COLOR[w.grp], weight:3, opacity:.5, lineCap:'butt', lineJoin:'round', interactive:false }).addTo(roadsLayer);
+    });
+    roadsLayer.addTo(map);
+    updateRoadWidths();
+    if(layer && layer.bringToFront) layer.bringToFront();
+  }
+
+  /* ---------- Estadísticas ---------- */
+  function renderStats(){
+    var total = state.rows.length, valid = 0, inn = 0, out = 0;
+    state.rows.forEach(function(r){
+      if(!r.valid) return; valid++;
+      if(state.analyzed){ if(cls(r) === 'in') inn++; else out++; }
+    });
+    var items = [[total,'Filas del archivo',''],[valid,'Con coordenadas válidas',''],[total - valid,'Sin coordenadas','']];
+    if(state.analyzed){
+      items.push([inn,'Dentro de carretera','ok'],[out,'Fuera de carretera','bad'],
+                 [valid ? (inn / valid * 100).toFixed(1) + ' %' : '0 %','Porcentaje dentro','']);
+    } else {
+      items.push(['…','Dentro de carretera',''],['…','Fuera de carretera','']);
+    }
+    $('stats').innerHTML = items.map(function(i){
+      var v = typeof i[0] === 'number' ? i[0].toLocaleString('es-PE') : i[0];
+      return '<div class="stat ' + i[2] + '"><b>' + v + '</b><span>' + i[1] + '</span></div>';
+    }).join('');
+    var btn = $('btnDl');
+    btn.disabled = !state.analyzed || inn === 0;
+    btn.textContent = state.analyzed ? 'Descargar solo puntos dentro (' + inn + ')' : 'Descargar solo puntos dentro';
+  }
+
+  /* ---------- Consulta de carreteras (OpenStreetMap / Overpass) ---------- */
+  async function overpass(query){
+    var lastErr = null;
+    for(var i = 0; i < ENDPOINTS.length; i++){
+      var ctl = new AbortController(), to = setTimeout(function(){ ctl.abort(); }, 100000);
+      try {
+        var res = await fetch(ENDPOINTS[i], {
+          method:'POST', signal:ctl.signal,
+          headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+          body:'data=' + encodeURIComponent(query)
+        });
+        clearTimeout(to);
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        var js = await res.json();
+        return js.elements || [];
+      } catch(e){ clearTimeout(to); lastErr = e; }
+    }
+    throw lastErr || new Error('sin respuesta');
+  }
+
+  var GROUP_COLOR = { main:'#f59e0b', sec:'#ca8a04', local:'#0ea5e9', svc:'#6b7280' };
+  var GROUPS = { main:['motorway','motorway_link','trunk','trunk_link','primary','primary_link'],
+                 sec:['secondary','secondary_link','tertiary','tertiary_link'],
+                 local:['unclassified','residential','living_street','road'] };
+  function grpOf(kind){
+    for(var g in GROUPS){ if(GROUPS[g].indexOf(kind) !== -1) return g; }
+    return 'svc';   // service, track y cualquier otro tipo menor
+  }
+  function enabledGroups(){
+    var e = {};
+    document.querySelectorAll('.gtype').forEach(function(c){ e[c.getAttribute('data-g')] = c.checked; });
+    return e;
+  }
+  var HALF = { motorway:6, motorway_link:4.5, trunk:6, trunk_link:4.5, primary:5, primary_link:4, secondary:4.5, secondary_link:4,
+               tertiary:4, tertiary_link:3.5, unclassified:3.5, residential:3.5, living_street:3, service:2.5, track:2 };
+  function halfWidth(tg){
+    var w = parseFloat(String(tg.width || '').replace(',', '.'));
+    if(isFinite(w) && w > 0 && w < 60) return w / 2;
+    var l = parseInt(tg.lanes, 10);
+    if(isFinite(l) && l > 0 && l < 12) return l * 3.5 / 2;
+    return HALF[tg.highway] || 3.5;
+  }
+
+  /* ---------- Referencia: trazo de la vía dibujado por el mapa OpenStreetMap (píxeles de las teselas) ---------- */
+  var TILES = 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';   // mapa OpenStreetMap (referencia del análisis)
+  var tileCache = {}, tileData = {}, cv = null, OFFS = null;
+  var hist = new Uint32Array(262144), qBuf = new Int32Array(65536), seen = new Uint8Array(65536), cand = new Uint8Array(65536), core = new Uint8Array(65536), thick = new Uint8Array(65536), fm = new Uint8Array(65536);
+
+  // Convierte una tesela (256×256 px) del mapa OpenStreetMap en una máscara de bits: 1 = píxel de la
+  // franja (relleno de color) de una vía.
+  //  1. Candidatos: píxeles de color de vía (blanco o colorido) distintos del fondo. Los grises, beiges,
+  //     textos y líneas oscuras no son relleno de vía.
+  //  2. Núcleo: candidatos dentro de una banda de color uniforme (ventana 5×5 sin cambio de color).
+  //     El contorno de la vía es una línea fina de otro color y queda fuera.
+  //  3. Se descartan las zonas uniformes más gruesas que cualquier vía (bosques, agua, parques).
+  //  4. Se recuperan los bordes del relleno por su parecido de color y se cierran huecos pequeños.
+  var THICK = 75, FD = 10;
+  function buildMask(img){
+    if(!cv){ cv = document.createElement('canvas'); cv.width = 256; cv.height = 256; }
+    var ctx = cv.getContext('2d', { willReadFrequently:true });
+    ctx.clearRect(0, 0, 256, 256);
+    ctx.drawImage(img, 0, 0, 256, 256);
+    var d = ctx.getImageData(0, 0, 256, 256).data;    // falla si el navegador bloquea la lectura (CORS)
+    var i, k, x, y, xx, yy, p, n, best = 0, bestKey = 0;
+    hist.fill(0);
+    for(i = 0; i < 65536; i++){
+      k = ((d[i*4] >> 2) << 12) | ((d[i*4+1] >> 2) << 6) | (d[i*4+2] >> 2);
+      if(++hist[k] > best){ best = hist[k]; bestKey = k; }
+    }
+    var Lr = 0, Lg = 0, Lb = 0;     // color de fondo (el más frecuente de la tesela)
+    for(i = 0; i < 65536; i++){
+      k = ((d[i*4] >> 2) << 12) | ((d[i*4+1] >> 2) << 6) | (d[i*4+2] >> 2);
+      if(k === bestKey){ Lr = d[i*4]; Lg = d[i*4+1]; Lb = d[i*4+2]; break; }
+    }
+    var out = { bits:new Uint8Array(8192), placeholder:false };
+    // Tesela gris/blanca uniforme = imagen de error o "sin datos"
+    if(best / 65536 > 0.9 && Math.max(Lr, Lg, Lb) - Math.min(Lr, Lg, Lb) <= 3){ out.placeholder = true; return out; }
+
+    // 1) candidatos
+    cand.fill(0); core.fill(0); thick.fill(0); fm.fill(0);
+    for(i = 0; i < 65536; i++){
+      var r = d[i*4], g = d[i*4+1], b = d[i*4+2], dr = r - Lr, dg = g - Lg, db = b - Lb;
+      if(dr*dr + dg*dg + db*db < 49) continue;                    // igual al fondo
+      var mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      if(mn >= 250 || (mx - mn >= 40 && mx >= 140)) cand[i] = 1;   // blanco o colorido (no gris, no oscuro)
+    }
+    // 2) núcleo: banda de color uniforme
+    var nCore = 0, ok;
+    for(i = 0; i < 65536; i++){
+      if(!cand[i]) continue;
+      x = i & 255; y = i >> 8; ok = 1;
+      var r0 = d[i*4], g0 = d[i*4+1], b0 = d[i*4+2];
+      for(yy = Math.max(0, y - 2); ok && yy <= Math.min(255, y + 2); yy++){
+        for(xx = Math.max(0, x - 2); xx <= Math.min(255, x + 2); xx++){
+          p = ((yy << 8) | xx) * 4;
+          if(Math.abs(d[p] - r0) > FD || Math.abs(d[p+1] - g0) > FD || Math.abs(d[p+2] - b0) > FD){ ok = 0; break; }
+        }
+      }
+      core[i] = ok; nCore += ok;
+    }
+    // 3) zonas demasiado gruesas para ser una vía
+    if(nCore >= THICK * THICK){
+      var integral = new Int32Array(257 * 257), row, full = THICK * THICK;
+      for(y = 0; y < 256; y++){
+        row = 0;
+        for(x = 0; x < 256; x++){
+          row += core[(y << 8) | x];
+          integral[(y + 1) * 257 + x + 1] = integral[y * 257 + x + 1] + row;
+        }
+      }
+      for(var y0 = 0; y0 + THICK <= 256; y0 += 3) for(var x0 = 0; x0 + THICK <= 256; x0 += 3){
+        var sum = integral[(y0 + THICK) * 257 + x0 + THICK] - integral[y0 * 257 + x0 + THICK] - integral[(y0 + THICK) * 257 + x0] + integral[y0 * 257 + x0];
+        if(sum < full) continue;
+        var seed = ((y0 + (THICK >> 1)) << 8) | (x0 + (THICK >> 1));
+        if(thick[seed]) continue;
+        var head = 0, tail = 0; qBuf[tail++] = seed; thick[seed] = 1;
+        while(head < tail){
+          var q = qBuf[head++], qx = q & 255, qy = q >> 8, nb;
+          for(var t = 0; t < 4; t++){
+            if(t === 0){ if(qx === 0) continue; nb = q - 1; }
+            else if(t === 1){ if(qx === 255) continue; nb = q + 1; }
+            else if(t === 2){ if(qy === 0) continue; nb = q - 256; }
+            else { if(qy === 255) continue; nb = q + 256; }
+            if(!core[nb] || thick[nb]) continue;
+            if(Math.abs(d[nb*4] - d[q*4]) > FD || Math.abs(d[nb*4+1] - d[q*4+1]) > FD || Math.abs(d[nb*4+2] - d[q*4+2]) > FD) continue;
+            thick[nb] = 1; qBuf[tail++] = nb;
+          }
+        }
+      }
+    }
+    for(i = 0; i < 65536; i++) fm[i] = (core[i] && !thick[i]) ? 1 : 0;
+    // 4a) bordes del relleno: píxeles candidatos pegados (≤2 px) a la franja y de color parecido
+    seen.fill(0);
+    for(i = 0; i < 65536; i++){
+      if(!cand[i] || fm[i] || thick[i]) continue;
+      x = i & 255; y = i >> 8; ok = 0;
+      for(yy = Math.max(0, y - 2); !ok && yy <= Math.min(255, y + 2); yy++){
+        for(xx = Math.max(0, x - 2); xx <= Math.min(255, x + 2); xx++){
+          p = (yy << 8) | xx;
+          if(!fm[p]) continue;
+          if(Math.abs(d[p*4] - d[i*4]) <= FD && Math.abs(d[p*4+1] - d[i*4+1]) <= FD && Math.abs(d[p*4+2] - d[i*4+2]) <= FD){ ok = 1; break; }
+        }
+      }
+      if(ok) seen[i] = 1;
+    }
+    for(i = 0; i < 65536; i++) if(seen[i]) fm[i] = 1;
+    // 4b) se eliminan manchas pequeñas (< 30 px)
+    seen.fill(0);
+    for(i = 0; i < 65536; i++){
+      if(!fm[i] || seen[i]) continue;
+      var h2 = 0, t2 = 0; qBuf[t2++] = i; seen[i] = 1;
+      while(h2 < t2){
+        var c = qBuf[h2++], cx = c & 255, cy = c >> 8;
+        if(cx > 0   && fm[n = c - 1]   && !seen[n]){ seen[n] = 1; qBuf[t2++] = n; }
+        if(cx < 255 && fm[n = c + 1]   && !seen[n]){ seen[n] = 1; qBuf[t2++] = n; }
+        if(cy > 0   && fm[n = c - 256] && !seen[n]){ seen[n] = 1; qBuf[t2++] = n; }
+        if(cy < 255 && fm[n = c + 256] && !seen[n]){ seen[n] = 1; qBuf[t2++] = n; }
+      }
+      if(t2 >= 30) for(var z2 = 0; z2 < t2; z2++){ var pp = qBuf[z2]; out.bits[pp >> 3] |= (1 << (pp & 7)); }
+    }
+    closeGaps(out.bits);
+    return out;
+  }
+
+  // Cierra huecos pequeños (≤ 6 px) dentro de la franja (etiquetas de texto, escudos...).
+  // Solo rellena huecos que tienen franja a ambos lados.
+  function closeGaps(bits){
+    var add = new Uint8Array(8192), GAP = 6, x, y, last, k, p;
+    var has = function(i){ return (bits[i >> 3] >> (i & 7)) & 1; };
+    var put = function(i){ add[i >> 3] |= (1 << (i & 7)); };
+    for(y = 0; y < 256; y++){
+      last = -1;
+      for(x = 0; x < 256; x++){
+        if(has((y << 8) | x)){
+          if(last >= 0 && x - last > 1 && x - last - 1 <= GAP) for(k = last + 1; k < x; k++) put((y << 8) | k);
+          last = x;
+        }
+      }
+    }
+    for(x = 0; x < 256; x++){
+      last = -1;
+      for(y = 0; y < 256; y++){
+        if(has((y << 8) | x)){
+          if(last >= 0 && y - last > 1 && y - last - 1 <= GAP) for(k = last + 1; k < y; k++) put((k << 8) | x);
+          last = y;
+        }
+      }
+    }
+    for(p = 0; p < 8192; p++) bits[p] |= add[p];
+  }
+
+  function loadTile(z, x, y){
+    var key = z + '/' + x + '/' + y;
+    if(tileCache[key]) return tileCache[key];
+    tileCache[key] = new Promise(function(resolve){
+      var img = new Image(), done = function(v){ tileData[key] = v; resolve(v); };
+      img.crossOrigin = 'anonymous';
+      img.onload = function(){ try { done(buildMask(img)); } catch(e){ done({ err:'cors' }); } };
+      img.onerror = function(){ done({ err:'load' }); };
+      img.src = TILES.replace('{s}', 'abc'.charAt((x + y) % 3)).replace('{z}', z).replace('{x}', x).replace('{y}', y);
+    });
+    return tileCache[key];
+  }
+
+  async function pool(items, n, fn){
+    var i = 0;
+    await Promise.all(Array.from({ length:n }, async function(){ while(i < items.length){ await fn(items[i++]); } }));
+  }
+
+  // Busca el zoom más alto con imágenes reales del mapa en la zona de los puntos
+  async function probeZoom(s){
+    var v = s.rows.filter(function(r){ return r.valid; });
+    if(!v.length) return null;
+    var smp = [v[0], v[Math.floor(v.length / 2)], v[v.length - 1]];
+    for(var z = ZMAX; z >= 16; z--){
+      var ok = 0;
+      for(var i = 0; i < smp.length; i++){
+        var P = proj(smp[i].lat, smp[i].lon, z);
+        var res = await loadTile(z, Math.floor(P[0] / 256), Math.floor(P[1] / 256));
+        if(!res.err && !res.placeholder) ok++;
+      }
+      if(ok >= 2) return z;
+    }
+    return null;
+  }
+
+  async function esriPass(s, z){
+    var rows = s.rows.filter(function(r){ return r.valid; }), need = {}, list = [];
+    rows.forEach(function(r){
+      var P = proj(r.lat, r.lon, z);
+      r.x = P[0]; r.y = P[1]; r.mpp = mpp(r.lat, z);
+      r.R = Math.min(90, Math.ceil(25 / r.mpp));
+      var x0 = Math.floor((r.x - r.R) / 256), x1 = Math.floor((r.x + r.R) / 256);
+      var y0 = Math.floor((r.y - r.R) / 256), y1 = Math.floor((r.y + r.R) / 256);
+      for(var ty = y0; ty <= y1; ty++) for(var tx = x0; tx <= x1; tx++){
+        var k = z + '/' + tx + '/' + ty;
+        if(!need[k]){ need[k] = 1; list.push([tx, ty]); }
+      }
+    });
+    var done = 0, bad = 0;
+    await pool(list, 8, async function(t){
+      if(state !== s) return;
+      var res = await loadTile(z, t[0], t[1]);
+      done++;
+      if(res.err || res.placeholder) bad++;
+      var txt = 'Leyendo el dibujo del mapa (zoom ' + z + ')… ' + done + ' de ' + list.length + ' teselas';
+      setBusy(txt); setProg(Math.round(done / list.length * 100));
+      if(done % 10 === 0) showMsg(txt, 'info', true);
+    });
+    return { total:list.length, bad:bad };
+  }
+
+  function buildOffsets(){
+    var a = [], R = 90;
+    for(var dy = -R; dy <= R; dy++) for(var dx = -R; dx <= R; dx++){
+      var d2 = dx * dx + dy * dy;
+      if(d2 <= R * R) a.push([dx, dy, d2]);
+    }
+    a.sort(function(p, q){ return p[2] - q[2]; });
+    OFFS = new Int32Array(a.length * 3);
+    a.forEach(function(t, i){ OFFS[i*3] = t[0]; OFFS[i*3+1] = t[1]; OFFS[i*3+2] = t[2]; });
+  }
+
+  // Distancia (px) de cada punto al píxel de trazo de vía más cercano
+  function esriDistances(s, z){
+    if(!OFFS) buildOffsets();
+    s.rows.forEach(function(r){
+      r.dist = null; r.excess = null; r.road = ''; r.wayId = null; r.half = 0; r.wayObj = null;
+      if(!r.valid) return;
+      var cx = Math.floor(r.x), cy = Math.floor(r.y), tx0 = (cx >> 8) - 1, ty0 = (cy >> 8) - 1, g = [];
+      for(var j = 0; j < 3; j++) for(var i = 0; i < 3; i++){
+        var t = tileData[z + '/' + (tx0 + i) + '/' + (ty0 + j)];
+        g.push(t && t.bits ? t.bits : null);
+      }
+      // Se busca el primer píxel de trazo (por orden de cercanía) y luego se refina con la
+      // distancia exacta, con subpíxel, desde la coordenada hasta el borde del píxel pintado.
+      var R2 = r.R * r.R, found = -1, bestD = Infinity, lim = Infinity;
+      for(var o = 0; o < OFFS.length; o += 3){
+        var d2 = OFFS[o+2];
+        if(d2 > lim) break;
+        if(found < 0 && d2 > R2) break;
+        var xx = cx + OFFS[o], yy = cy + OFFS[o+1];
+        var bits = g[((yy >> 8) - ty0) * 3 + ((xx >> 8) - tx0)];
+        if(!bits) continue;
+        var idx = ((yy & 255) << 8) | (xx & 255);
+        if(bits[idx >> 3] & (1 << (idx & 7))){
+          var ex = Math.max(Math.abs(xx + 0.5 - r.x) - 0.5, 0), ey = Math.max(Math.abs(yy + 0.5 - r.y) - 0.5, 0);
+          var dd = Math.sqrt(ex * ex + ey * ey);
+          if(dd < bestD) bestD = dd;
+          if(found < 0){ found = d2; lim = Math.pow(Math.sqrt(d2) + 2, 2); }
+        }
+      }
+      if(found >= 0){ r.dist = bestD; r.excess = bestD; }
+    });
+  }
+
+  async function analyzeEsri(){
+    if(analyzing || !state) return;
+    analyzing = true;
+    var s = state, fallback = false;
+    s.analyzed = false; renderStats(); drawMap(false);
+    setBusy('Preparando análisis…'); $('btnRe').disabled = true;
+    try {
+      showMsg('Buscando el zoom máximo con imágenes del mapa en la zona…', 'info', true);
+      var z = await probeZoom(s);
+      if(state !== s) return;
+      if(z == null){ fallback = true; return; }
+      var res = null, used = z;
+      for(; z >= 16; z--){
+        showMsg('Leyendo el dibujo del mapa OpenStreetMap al zoom ' + z + '…', 'info', true);
+        res = await esriPass(s, z);
+        if(state !== s) return;
+        used = z;
+        if(res.bad <= res.total * 0.2) break;
+      }
+      if(res.bad > res.total * 0.2) throw new Error('el mapa no tiene imágenes disponibles en esta zona');
+      showMsg('Midiendo la distancia de cada punto al trazo de la vía…', 'info', true);
+      setBusy('Midiendo la distancia de cada punto al trazo de la vía…');
+      await tick();
+      esriDistances(s, used);
+      s.mode = 'esri'; s.zA = used;
+      classify();
+      s.analyzed = true;
+      setBusy('Dibujando resultados…');
+      await tick();
+      showTol(); renderStats(); drawMap(false); drawMaskLayer();
+      var v = s.rows.filter(function(r){ return r.valid; }).length, inn = s.rows.filter(function(r){ return r.valid && cls(r) === 'in'; }).length;
+      showMsg('Análisis completado con el dibujo del mapa OpenStreetMap (zoom ' + used + (used < ZMAX ? ', el máximo con imágenes en la zona' : ', el máximo') + '): ' + inn + ' de ' + v + ' puntos están dentro de la carretera (margen GPS ' + tol() + ' m).', 'ok');
+      setTimeout(function(){ setProg(null); }, 800);
+    } catch(err){
+      console.error(err);
+      setProg(null); setBusy(null);
+      showMsg('No se pudo analizar con el dibujo del mapa (' + err.message + '). Puedes reintentar con «Reanalizar» o cambiar la referencia a OpenStreetMap.', 'err');
+    } finally {
+      if(state === s) setBusy(null);
+      analyzing = false; $('btnRe').disabled = false;
+      if(state !== s){ setTimeout(analyze, 0); }
+      else if(fallback){
+        $('ref').value = 'osm'; setMode();
+        showMsg('No se pudo leer el dibujo del mapa OpenStreetMap (sin conexión o lectura bloqueada por el navegador). Se usarán los datos vectoriales de OpenStreetMap como referencia.', 'err');
+        setTimeout(analyze, 0);
+      }
+    }
+  }
+
+  function analyze(){ return $('ref').value === 'esri' ? analyzeEsri() : analyzeOsm(); }
+  function setMode(){ document.body.className = $('ref').value === 'esri' ? 'mode-esri' : 'mode-osm'; }
+
+  async function analyzeOsm(){
+    if(analyzing || !state) return;
+    analyzing = true; state.analyzed = false; renderStats(); drawMap(false);
+    setBusy('Preparando análisis…');
+    $('btnRe').disabled = true;
+
+    // celdas ocupadas por puntos
+    var cells = {};
+    state.rows.forEach(function(r){
+      if(!r.valid) return;
+      var a = Math.floor(r.lat / CELL), b = Math.floor(r.lon / CELL);
+      cells[a + '_' + b] = [a, b];
+    });
+    var keys = Object.keys(cells), chunks = [];
+    for(var i = 0; i < keys.length; i += CHUNK) chunks.push(keys.slice(i, i + CHUNK));
+    var s = state;
+
+    try {
+      for(var ci = 0; ci < chunks.length; ci++){
+        if(state !== s) break;
+        if(s.done[ci]) continue;
+        setProg(Math.round(ci / chunks.length * 100));
+        var txt = 'Consultando carreteras… ' + (ci + 1) + ' de ' + chunks.length + ' (' + Math.round(ci / chunks.length * 100) + ' %)';
+        showMsg(txt, 'info', true); setBusy(txt);
+        var parts = chunks[ci].map(function(k){
+          var a = cells[k][0], b = cells[k][1];
+          var midLat = (a + .5) * CELL, dLat = MAXTOL / 110574 + 1e-5;
+          var dLon = MAXTOL / (111320 * Math.cos(midLat * Math.PI / 180)) + 1e-5;
+          var bb = [a * CELL - dLat, b * CELL - dLon, (a + 1) * CELL + dLat, (b + 1) * CELL + dLon].map(function(x){ return x.toFixed(6); }).join(',');
+          return 'way["highway"]["highway"!~"^(' + EXCL + ')$"](' + bb + ');';
+        });
+        var q = '[out:json][timeout:90];(' + parts.join('') + ');out geom;';
+        var els = await overpass(q);
+        els.forEach(function(el){
+          if(el.type !== 'way' || !el.geometry || s.wayIds[el.id]) return;
+          s.wayIds[el.id] = 1;
+          var pts = el.geometry.map(function(g){ return [g.lat, g.lon]; });
+          var mnLa = 90, mxLa = -90, mnLo = 180, mxLo = -180;
+          pts.forEach(function(p){ if(p[0] < mnLa) mnLa = p[0]; if(p[0] > mxLa) mxLa = p[0]; if(p[1] < mnLo) mnLo = p[1]; if(p[1] > mxLo) mxLo = p[1]; });
+          var tg = el.tags || {};
+          s.ways.push({ id:el.id, pts:pts, pp:pts.map(function(q){ return proj(q[0], q[1]); }), lat:(mnLa + mxLa) / 2, bb:[mnLa, mxLa, mnLo, mxLo], name:tg.name || tg.ref || '', kind:tg.highway || '', grp:grpOf(tg.highway || ''), half:halfWidth(tg) });
+        });
+        s.done[ci] = true;
+      }
+      if(state !== s) return;
+      setProg(100);
+      showMsg('Calculando la distancia de cada coordenada a las vías…', 'info', true);
+      setBusy('Calculando distancia de cada punto a la vía…');
+      await tick();
+      computeDistances();
+      s.mode = 'osm'; s.zA = ZMAX; drawMaskLayer();
+      classify();
+      s.analyzed = true;
+      setBusy('Dibujando resultados…');
+      await tick();
+      renderStats(); drawMap(false); drawRoads();
+      var inn = s.rows.filter(function(r){ return r.valid && cls(r) === 'in'; }).length;
+      showMsg('Análisis completado: ' + inn + ' de ' + s.rows.filter(function(r){return r.valid;}).length + ' puntos están dentro de una carretera (ancho de vía + margen GPS de ' + tol() + ' m).', 'ok');
+      setTimeout(function(){ setProg(null); }, 800);
+    } catch(err){
+      console.error(err);
+      setProg(null); setBusy(null);
+      showMsg('No se pudo consultar las carreteras (' + err.message + '). Revisa tu conexión y pulsa «Reanalizar» para reintentar; se continuará donde quedó.', 'err');
+    } finally {
+      if(state === s) setBusy(null);
+      analyzing = false; $('btnRe').disabled = false;
+      if(state !== s){ setTimeout(analyze, 0); }
+    }
+  }
+
+  // Todo se mide en píxeles al zoom máximo. Para cada punto se elige la vía con menor
+  // "exceso" = distancia al eje − semiancho de la vía (ambos en píxeles).
+  function computeDistances(){
+    var ways = state.ways, en = enabledGroups();
+    state.rows.forEach(function(r){
+      r.dist = null; r.excess = null; r.road = ''; r.wayId = null; r.half = 0; r.wayObj = null;
+      if(!r.valid) return;
+      var P = proj(r.lat, r.lon), m = mpp(r.lat, ZMAX);
+      r.x = P[0]; r.y = P[1]; r.mpp = m;
+      var kx = 111320 * Math.cos(r.lat * Math.PI / 180), ky = 110574;
+      var padLat = MAXTOL / ky, padLon = MAXTOL / kx, maxPx = MAXTOL / m;
+      var bestEx = Infinity, bestD = Infinity, bestWay = null;
+      for(var w = 0; w < ways.length; w++){
+        var W = ways[w], bb = W.bb;
+        if(!en[W.grp]) continue;
+        if(r.lat < bb[0] - padLat || r.lat > bb[1] + padLat || r.lon < bb[2] - padLon || r.lon > bb[3] + padLon) continue;
+        var pp = W.pp, halfPx = W.half / m;
+        for(var i = 0; i < pp.length - 1; i++){
+          var ax = pp[i][0] - P[0], ay = pp[i][1] - P[1];
+          var dx = pp[i+1][0] - pp[i][0], dy = pp[i+1][1] - pp[i][1], l2 = dx * dx + dy * dy, t = 0;
+          if(l2 > 0){ t = -(ax * dx + ay * dy) / l2; t = t < 0 ? 0 : (t > 1 ? 1 : t); }
+          var px = ax + t * dx, py = ay + t * dy, dist = Math.sqrt(px * px + py * py);
+          if(dist > maxPx) continue;
+          var ex = dist - halfPx;
+          if(ex < bestEx){ bestEx = ex; bestD = dist; bestWay = W; }
+        }
+      }
+      if(bestWay){
+        r.dist = bestD; r.excess = bestEx; r.wayId = bestWay.id; r.half = bestWay.half; r.wayObj = bestWay;
+        r.road = bestWay.name || bestWay.kind;
+      }
+    });
+  }
+
+  /* ---------- Descarga: solo puntos dentro ---------- */
+  function download(){
+    if(!state || !state.analyzed) return;
+    var keep = state.rows.filter(function(r){ return r.valid && cls(r) === 'in'; });
+    if(!keep.length){ showMsg('No hay puntos dentro de carretera para descargar.','err'); return; }
+    var R0 = state.hdr, C0 = state.range.s.c, C1 = state.range.e.c, ws = state.ws, out = {};
+    var srcRows = [R0].concat(keep.map(function(r){ return r.src; }));
+    srcRows.forEach(function(sr, i){
+      for(var c = C0; c <= C1; c++){
+        var cell = ws[XLSX.utils.encode_cell({r:sr,c:c})];
+        if(cell) out[XLSX.utils.encode_cell({r:i,c:c})] = Object.assign({}, cell);
+      }
+    });
+    var ref = XLSX.utils.encode_range({ s:{r:0,c:C0}, e:{r:srcRows.length - 1,c:C1} });
+    out['!ref'] = ref; out['!autofilter'] = { ref:ref };
+    if(ws['!cols']) out['!cols'] = ws['!cols'];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, out, state.sheetName.slice(0, 31));
+    XLSX.writeFile(wb, state.base + '.xlsx', { cellStyles:true });
+    showMsg('Descargado "' + state.base + '.xlsx" con ' + keep.length + ' filas (se eliminaron ' + (state.rows.length - keep.length) + ').', 'ok');
+  }
+
+  /* ---------- Eventos de interfaz ---------- */
+  var drop = $('drop'), timer = null;
+  $('file').addEventListener('change', function(e){ handleFile(e.target.files[0]); e.target.value = ''; });
+  ['dragenter','dragover'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave','drop'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function(e){ handleFile(e.dataTransfer.files[0]); });
+  $('tol').addEventListener('input', function(){
+    showTol();
+    if(!state || !state.analyzed) return;
+    clearTimeout(timer);
+    timer = setTimeout(function(){ classify(); renderStats(); drawMap(false); }, 120);
+  });
+  $('show').addEventListener('change', function(){ drawMap(true); });
+  $('lbl').addEventListener('change', function(){ drawMap(false); });
+  $('grp').addEventListener('change', function(){ drawMap(false); });
+  $('roads').addEventListener('change', drawRoads);
+  $('mask').addEventListener('change', drawMaskLayer);
+  async function regroup(){
+    if(!state || !state.analyzed || analyzing || state.mode !== 'osm') return;
+    var s0 = state;
+    showMsg('Recalculando con los tipos de vía elegidos…', 'info', true);
+    setBusy('Recalculando con los tipos de vía elegidos…');
+    await tick();
+    computeDistances(); classify();
+    renderStats(); drawMap(false); drawRoads();
+    setBusy(null);
+    var v = s0.rows.filter(function(r){ return r.valid; }).length, inn = s0.rows.filter(function(r){ return r.valid && cls(r) === 'in'; }).length;
+    showMsg('Recalculado: ' + inn + ' de ' + v + ' puntos están dentro de las vías seleccionadas.', 'ok');
+  }
+  document.querySelectorAll('.gtype').forEach(function(c){ c.addEventListener('change', regroup); });
+  setMode();
+  $('ref').addEventListener('change', function(){
+    setMode();
+    if(!state) return;
+    if(analyzing){ showMsg('Espera a que termine el análisis en curso y pulsa «Reanalizar» para aplicar la nueva referencia.', 'info'); return; }
+    analyze();
+  });
+  $('btnRe').addEventListener('click', analyze);
+  $('skip').addEventListener('change', function(){
+    if(!last || analyzing) return;
+    try { load(last.data, last.name); } catch(err){ showMsg('No se pudo leer el archivo: ' + err.message, 'err'); }
+  });
+  $('btnDl').addEventListener('click', download);
+})();
+</script>
+</body>
+</html>

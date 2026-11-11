@@ -1,0 +1,6 @@
+{
+  "name": "Puntos en Carretera",
+  "description": "Analizador geoespacial de reportes Excel para detectar puntos GPS dentro o fuera de carreteras con referencia OpenStreetMap.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
