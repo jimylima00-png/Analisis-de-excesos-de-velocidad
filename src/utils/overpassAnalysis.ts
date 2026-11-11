@@ -69,20 +69,24 @@ interface OverpassElement {
 }
 
 async function overpassQuery(query: string, signal?: AbortSignal): Promise<OverpassElement[]> {
-  // Primary path: server-side proxy avoids browser CORS and rate-limit failures
-  try {
-    const res = await fetch('/api/overpass', {
-      method: 'POST',
-      signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: query }),
-    });
-    if (res.ok) {
-      const js = await res.json();
-      return (js.elements as OverpassElement[]) || [];
+  const isFileProtocol = typeof window !== 'undefined' && window.location.protocol === 'file:';
+
+  // Primary path when hosted: server-side proxy avoids browser CORS and rate-limit failures
+  if (!isFileProtocol) {
+    try {
+      const res = await fetch('/api/overpass', {
+        method: 'POST',
+        signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: query }),
+      });
+      if (res.ok) {
+        const js = await res.json();
+        return (js.elements as OverpassElement[]) || [];
+      }
+    } catch {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     }
-  } catch (e) {
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   }
 
   // Direct fallback if proxy is unavailable

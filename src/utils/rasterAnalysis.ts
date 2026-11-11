@@ -1,7 +1,8 @@
 import type { PointRow, TileMaskResult } from '../types/geo';
 import { mpp, proj, ZMAX } from './geoMath';
 
-const TILES = '/api/tile/{z}/{x}/{y}';
+const PROXY_TILES = '/api/tile/{z}/{x}/{y}';
+const DIRECT_TILES = 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
 const THICK = 75;
 const FD = 10;
 
@@ -187,9 +188,14 @@ function buildMask(img: HTMLImageElement): TileMaskResult {
     const dg = g - Lg;
     const db = b - Lb;
     if (dr * dr + dg * dg + db * db < 49) continue;
-    const mx = Math.max(r, g, b);
-    const mn = Math.min(r, g, b);
-    if (mn >= 252 || (mx - mn >= 42 && mx >= 140)) cand[i] = 1;
+
+    // Solo carreteras OSM (verde: autopista/troncal, rojo/salmón/naranja: troncal/primaria).
+    // Se excluyen explícitamente las calles urbanas blancas o grises de pueblos/ciudades.
+    const isHighwayGreen = g - Math.max(r, b) >= 16 && g >= 135;
+    const isHighwayRed = r - Math.max(g, b) >= 22 && r >= 165 && g >= 60 && b >= 60;
+    if (isHighwayGreen || isHighwayRed) {
+      cand[i] = 1;
+    }
   }
 
   let nCore = 0;
@@ -345,25 +351,43 @@ export function loadTile(z: number, x: number, y: number): Promise<TileMaskResul
   const key = `${z}/${x}/${y}`;
   if (tileCache[key]) return tileCache[key];
 
+  const isFileProtocol = typeof window !== 'undefined' && window.location.protocol === 'file:';
+  const formatUrl = (tpl: string) =>
+    tpl
+      .replace('{s}', 'abc'.charAt(Math.abs(x + y) % 3))
+      .replace('{z}', String(z))
+      .replace('{x}', String(x))
+      .replace('{y}', String(y));
+
   tileCache[key] = new Promise((resolve) => {
-    const img = new Image();
     const done = (v: TileMaskResult) => {
       tileData[key] = v;
       resolve(v);
     };
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      try {
-        done(buildMask(img));
-      } catch {
-        done({ err: 'cors' });
-      }
+
+    const loadFromUrl = (url: string, onFail?: () => void) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          done(buildMask(img));
+        } catch {
+          if (onFail) onFail();
+          else done({ err: 'cors' });
+        }
+      };
+      img.onerror = () => {
+        if (onFail) onFail();
+        else done({ err: 'load' });
+      };
+      img.src = url;
     };
-    img.onerror = () => done({ err: 'load' });
-    img.src = TILES.replace('{s}', 'abc'.charAt(Math.abs(x + y) % 3))
-      .replace('{z}', String(z))
-      .replace('{x}', String(x))
-      .replace('{y}', String(y));
+
+    if (isFileProtocol) {
+      loadFromUrl(formatUrl(DIRECT_TILES));
+    } else {
+      loadFromUrl(formatUrl(PROXY_TILES), () => loadFromUrl(formatUrl(DIRECT_TILES)));
+    }
   });
 
   return tileCache[key];

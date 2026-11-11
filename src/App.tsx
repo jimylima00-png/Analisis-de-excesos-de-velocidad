@@ -10,6 +10,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Info,
+  RotateCcw,
 } from 'lucide-react';
 import type {
   AnalysisMode,
@@ -50,8 +51,8 @@ export default function App() {
   const [clusterPoints, setClusterPoints] = useState(true);
   const [enabledGroups, setEnabledGroups] = useState<Record<RoadGroup, boolean>>({
     main: true,
-    sec: true,
-    local: true,
+    sec: false,
+    local: false,
     svc: false,
   });
 
@@ -186,14 +187,40 @@ export default function App() {
     []
   );
 
+  const handleReset = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    clearRasterCache();
+    setAnalyzing(false);
+    setProgressPct(0);
+    setProgressMsg('');
+    setDataset(null);
+    setRawFile(null);
+    setNotice(null);
+    setSelectedPointId(null);
+    setSelectedPlate('');
+    setMinSpeedKmh(0);
+    setSearchQuery('');
+    setFilterStatus('all');
+    setShowTrajectory(false);
+    setShowMapper(false);
+  }, []);
+
   const loadRawWorkbook = useCallback(
     (data: Uint8Array, name: string, skip: number, customMapping?: Partial<ColumnMapping>) => {
       try {
+        if (abortRef.current) {
+          abortRef.current.abort();
+        }
         clearRasterCache();
         const parsed = parseWorkbook(data, name, skip, customMapping);
         setDataset(parsed);
         setSelectedPointId(null);
         setSelectedPlate('');
+        setMinSpeedKmh(0);
+        setSearchQuery('');
         setFilterStatus('all');
         setFitTrigger((c) => c + 1);
 
@@ -226,12 +253,17 @@ export default function App() {
   };
 
   const handleLoadSample = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
     clearRasterCache();
     setRawFile(null);
     const sample = createSampleDataset();
     setDataset(sample);
     setSelectedPointId(null);
     setSelectedPlate('');
+    setMinSpeedKmh(0);
+    setSearchQuery('');
     setFilterStatus('all');
     setFitTrigger((c) => c + 1);
     setNotice({
@@ -340,6 +372,15 @@ export default function App() {
             >
               Cargar muestra
             </button>
+            {typeof window !== 'undefined' && window.location.protocol !== 'file:' && (
+              <a
+                href="/puntos_en_carretera.html"
+                download="puntos_en_carretera.html"
+                className="hover:text-slate-900 dark:hover:text-slate-100 whitespace-nowrap shrink-0"
+              >
+                Descargar HTML
+              </a>
+            )}
             <button
               type="button"
               onClick={() => setDark((d) => !d)}
@@ -362,13 +403,24 @@ export default function App() {
                 e.target.value = '';
               }}
             />
+            {dataset && (
+              <button
+                type="button"
+                onClick={handleReset}
+                title="Reiniciar búsqueda y cargar otro Excel"
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reiniciar
+              </button>
+            )}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors whitespace-nowrap shrink-0"
             >
               <Upload className="w-3.5 h-3.5" />
-              Subir Excel
+              {dataset ? 'Cargar otro Excel' : 'Subir Excel'}
             </button>
           </div>
         </div>
